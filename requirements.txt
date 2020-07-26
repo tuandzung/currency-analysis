@@ -1,0 +1,5 @@
+schedule
+kafka-python 
+requests
+happybase
+cbpro
