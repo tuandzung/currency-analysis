@@ -45,16 +45,15 @@ if __name__ == '__main__':
         row_ts = int(time.time()) // 3600 * 3600
         if df.collect():
             df.show(10, False)
-            ts = dateutil.parser.parse(df.collect()[0]['window']['end']).timestamp()
-            print(ts)
-#         write_catalog = json.dumps({
-#             'table': {'namespace': 'default', 'name': 'coins'},
-#             'rowkey': 'key',
-#             'columns': {
-#                 'row': {'cf': 'rowkey', 'col': 'key', 'type': 'string'},
-#                 str(batch_ts_offset): {'cf': 't', 'col': str(batch_ts_offset), 'type': 'string'}
-#             }
-#         })
+#             offset = ts - row_ts
+#             write_catalog = json.dumps({
+#                 'table': {'namespace': 'default', 'name': 'coins'},
+#                 'rowkey': 'key',
+#                 'columns': {
+#                     'row': {'cf': 'rowkey', 'col': 'key', 'type': 'string'},
+#                     str(offset): {'cf': 't', 'col': str(offset), 'type': 'string'}
+#                 }
+#             })
 
     df = spark \
       .readStream \
@@ -69,13 +68,18 @@ if __name__ == '__main__':
     query = df \
       .withColumn('timestamp', F.from_unixtime(F.col('ts')).cast('timestamp')) \
       .withWatermark('timestamp', watermark) \
-      .groupBy(
-        F.window('timestamp', window),
-        'exchange', 'symbol') \
+      .groupBy(F.window('timestamp', window),
+               'exchange', 'symbol') \
       .agg(F.first('price').alias('open'),
            F.max('price').alias('high'),
            F.min('price').alias('low'),
            F.last('price').alias('close')) \
+      .withColumn('rowkey', F.concat(F.col('exchange'),
+                                     F.lit('.'),
+                                     F.col('symbol'),
+                                     F.lit('.'),
+                                     F.unix_timestamp(F.col('window.end')))) \
+      .select('rowkey', 'open', 'high', 'low', 'close') \
       .writeStream \
       .foreachBatch(process_batch) \
       .start() \

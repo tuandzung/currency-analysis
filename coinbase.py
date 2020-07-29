@@ -90,7 +90,6 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--symbols', nargs='+', help='the symbol you want to pull.')
     parser.add_argument('-t', '--topic-name', help='the kafka topic push to.')
     parser.add_argument('-b', '--broker', help='the location of kafka broker.')
-    parser.add_argument('-d', '--duration', help='batch duration.')
 
     # Parse arguments.
     args = parser.parse_args()
