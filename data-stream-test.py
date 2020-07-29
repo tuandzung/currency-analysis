@@ -3,8 +3,10 @@ import math
 
 from unittest.mock import MagicMock, call
 from pyspark import SparkContext
+from pyspark.sql import SQLContext
 from pyspark.streaming import StreamingContext
 
+import time
 from time import sleep
 
 data_stream_module = __import__("data-stream")
@@ -46,13 +48,13 @@ def _make_dstream_helper(sc, ssc, test_input):
     return input_stream
 
 
-def test_data_stream(sc, ssc, topic):
+def test_data_stream(sc, sqlc, ssc, topic, batch_duration):
     input_stream = _make_dstream_helper(sc, ssc, test_input)
     
     print(input_stream.pprint())
     mock_kafka_producer = MagicMock()
 
-    data_stream_module.process_stream(input_stream, mock_kafka_producer, topic)
+    data_stream_module.process_stream(input_stream, sc, sqlc, mock_kafka_producer, topic, batch_duration)
 
     ssc.start()
     sleep(5)
@@ -80,6 +82,8 @@ def test_data_stream(sc, ssc, topic):
 
 if __name__ == '__main__':
     sc = SparkContext('local[2]', 'local-testing')
+    sqlc = SQLContext(sc)
     ssc = StreamingContext(sc, 1)
+    batch_duration = 10
 
-    test_data_stream(sc, ssc, topic)
+    test_data_stream(sc, sqlc, ssc, topic, batch_duration)

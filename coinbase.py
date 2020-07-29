@@ -31,13 +31,12 @@ class CoinbaseWsClient(cbpro.WebsocketClient):
             try:
                 price = msg['price']
                 symbol = msg['product_id']
-                base_vol = msg['last_size']
                 timestamp = dateutil.parser.parse(msg['time']).timestamp()
 
                 payload = {
+                    'exchange': 'Coinbase',
                     'symbol': str(symbol),
                     'price': str(price),
-                    'base_vol': str(base_vol),
                     'ts': str(timestamp)
                 }
 
@@ -69,33 +68,6 @@ def check_symbol(symbols):
         logger.error('Failed to fetch products: %s', e)
 
 
-def fetch_price(symbol, producer, topic_name):
-    """
-    Helper function to retrieve data and send it to kafka
-    """
-    logger.debug('Start to fetch prices for %s', symbol)
-    try:
-        # no ',' between text body and format
-        response = requests.get('%s/products/%s/ticker' % (API_BASE, symbol))
-        price = response.json()['price']
-
-        timestamp = time.time()
-        payload = {
-            'Symbol': str(symbol),
-            'LastTradePrice': str(price),
-            'Timestamp': str(timestamp)
-        }
-
-        logger.debug('Retrieved %s info %s', symbol, payload)
-
-        # serialization json => str, default string format is ASCII
-        producer.send(topic=topic_name,
-                      value=json.dumps(payload).encode('utf-8'))
-        logger.info('Sent price for %s to kafka', symbol)
-    except Exception as e:
-        logger.error('Failed to fetch price: %s', e)
-
-
 def shutdown_hook(producer, ws_client):
     try:
         producer.flush(
@@ -117,8 +89,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--symbols', nargs='+', help='the symbol you want to pull.')
     parser.add_argument('-t', '--topic-name', help='the kafka topic push to.')
-    # kafka's location, easily handle to remote kafka
     parser.add_argument('-b', '--broker', help='the location of kafka broker.')
+    parser.add_argument('-d', '--duration', help='batch duration.')
 
     # Parse arguments.
     args = parser.parse_args()
