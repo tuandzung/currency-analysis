@@ -74,13 +74,20 @@ if __name__ == '__main__':
            F.max('price').alias('high'),
            F.min('price').alias('low'),
            F.last('price').alias('close')) \
-      .withColumn('rowkey', F.concat(F.col('exchange'),
-                                     F.lit('.'),
-                                     F.col('symbol'),
-                                     F.lit('.'),
-                                     F.unix_timestamp(F.col('window.end')))) \
-      .select('rowkey', 'open', 'high', 'low', 'close') \
+      .withColumn('ohlc', F.concat(F.col('open'),
+                                   F.lit(','),
+                                   F.col('high'),
+                                   F.lit(','),
+                                   F.col('low'),
+                                   F.lit(','),
+                                   F.col('close'))) \
+      .withColumn('time', F.unix_timestamp('window.end')) \
+      .select(F.to_json(F.struct(
+        'exchange', 'symbol', 'time', 'ohlc')).alias('value')) \
       .writeStream \
-      .foreachBatch(process_batch) \
+      .format('kafka') \
+      .option('kafka.bootstrap.servers', kafka_broker) \
+      .option('topic', 'sink-topic') \
+      .option('checkpointLocation', "/tmp/checkpoint") \
       .start() \
       .awaitTermination()
