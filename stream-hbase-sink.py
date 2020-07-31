@@ -40,20 +40,6 @@ if __name__ == '__main__':
         StructField("price", StringType(), True),
         StructField("ts", StringType(), True)
     ])
-    
-    def process_batch(df, epoch_id):
-        row_ts = int(time.time()) // 3600 * 3600
-        if df.collect():
-            df.show(10, False)
-#             offset = ts - row_ts
-#             write_catalog = json.dumps({
-#                 'table': {'namespace': 'default', 'name': 'coins'},
-#                 'rowkey': 'key',
-#                 'columns': {
-#                     'row': {'cf': 'rowkey', 'col': 'key', 'type': 'string'},
-#                     str(offset): {'cf': 't', 'col': str(offset), 'type': 'string'}
-#                 }
-#             })
 
     df = spark \
       .readStream \
@@ -65,25 +51,26 @@ if __name__ == '__main__':
       .select(F.from_json(F.col('value').cast('string'), schema).alias('parsed')) \
       .select('parsed.*')
     
+    json_schema = '{"schema": {"type": "struct", "name": "coins.ohlc", "fields": [{"field": "exchange", "type": "string", "optional": false}, {"field": "symbol", "type": "string", "optional": false}, {"field": "time", "type": "string", "optional": false}, {"field": "open", "type": "float", "optional": false}, {"field": "high", "type": "float", "optional": false}, {"field": "low", "type": "float", "optional": false}, {"field": "close", "type": "float", "optional": false}]}, '
+    
     query = df \
       .withColumn('timestamp', F.from_unixtime(F.col('ts')).cast('timestamp')) \
       .withWatermark('timestamp', watermark) \
       .groupBy(F.window('timestamp', window),
                'exchange', 'symbol') \
-      .agg(F.first('price').alias('open'),
-           F.max('price').alias('high'),
-           F.min('price').alias('low'),
-           F.last('price').alias('close')) \
-      .withColumn('ohlc', F.concat(F.col('open'),
-                                   F.lit(','),
-                                   F.col('high'),
-                                   F.lit(','),
-                                   F.col('low'),
-                                   F.lit(','),
-                                   F.col('close'))) \
-      .withColumn('time', F.unix_timestamp('window.end')) \
+      .agg(F.first('price').cast('float').alias('open'),
+           F.max('price').cast('float').alias('high'),
+           F.min('price').cast('float').alias('low'),
+           F.last('price').cast('float').alias('close')) \
+      .withColumn('time', F.unix_timestamp('window.end').cast('string')) \
       .select(F.to_json(F.struct(
-        'exchange', 'symbol', 'time', 'ohlc')).alias('value')) \
+        'exchange', 'symbol', 'time',
+        'open', 'high', 'low', 'close')).alias('payload')) \
+      .select(F.concat(
+        F.lit(json_schema),
+        F.lit('"payload": '),
+        F.col('payload'),
+        F.lit('}')).alias('value')) \
       .writeStream \
       .format('kafka') \
       .option('kafka.bootstrap.servers', kafka_broker) \

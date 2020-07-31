@@ -108,17 +108,14 @@ if __name__ == '__main__':
     # mark the calendar
     # schedule.every(1).seconds.do(fetch_price, symbol, producer, topic_name)
 
-    ws_client = CoinbaseWsClient(url=WSS_URL,
-                                 channels=CHANNEL,
-                                 products=symbols)
-
+    while True:
+        ws_client = CoinbaseWsClient(url=WSS_URL,
+                                     channels=CHANNEL,
+                                     products=symbols)
+        ws_client.start()
+        while not ws_client.stop:
+            time.sleep(10)
+        ws_client.close()
+        
     # Setup proper shutdown hook
     atexit.register(shutdown_hook, producer, ws_client)
-
-    ws_client.start()
-    while True:
-
-        # otherwise, schedule always check whether 1 second is reached
-        # see usage part at: https://github.com/dbader/schedule
-        # check calendar
-        time.sleep(1)

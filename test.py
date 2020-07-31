@@ -7,6 +7,7 @@ import logging
 import time
 
 from kafka import KafkaProducer
+from kafka.errors import KafkaError
 
 logger_format = '%(asctime)s - %(message)s'
 logging.basicConfig(format=logger_format)
@@ -14,7 +15,7 @@ logger = logging.getLogger('data-storage-reader')
 logger.setLevel(logging.DEBUG)
 
 
-def shutdown_hook(producer, connection):
+def shutdown_hook(producer):
     """
     a shutdown hook to be called before the shutdown
     """
@@ -23,14 +24,11 @@ def shutdown_hook(producer, connection):
         producer.flush(10)  # 10 sec
         producer.close()
         logger.info('Kafka producer closed')
-        logger.info('Closing Hbase Connection')
-        connection.close()
-        logger.info('Hbase Connection closed')
     except KafkaError as kafka_error:
         logger.warn('Failed to close Kafka producer, caused by: %s',
                     kafka_error.message)
     finally:
-        logger.info('Existing program')
+        logger.info('Exiting program')
 
 
 if __name__ == '__main__':
@@ -51,22 +49,29 @@ if __name__ == '__main__':
     payload = {
         "schema": {
             "type": "struct", 
-            "name": "User",
+            "name": "coins.ohlc",
             "fields": [
-                {"field": "firstName", "type": "string"},
-                {"field": "lastName", "type": "string"},
-                {"field": "age","type": "int32"},
-                {"field":"salary","type":"int64"}
-            ]
+                {"field": "exchange", "type": "string", "optional": False},
+                {"field": "symbol", "type": "string", "optional": False},
+                {"field": "time", "type": "string", "optional": False},
+                {"field": "open", "type": "float", "optional": False},
+                {"field": "high", "type": "float", "optional": False},
+                {"field": "low", "type": "float", "optional": False},
+                {"field": "close", "type": "float", "optional": False}]
         },
         "payload": {
-            "firstName": "John",
-            "lastName": "Smith",
-            "age":30,
-            "salary": 4830
+            "exchange": "Coinbase",
+            "symbol": "BTC-USD",
+            "time": "1596171720",
+            "open": 11068.55,
+            "high": 11068.55,
+            "low": 11068.55,
+            "close": 11068.55
         }
     }
     print(json.dumps(payload))
     kafka_producer.send(topic=topic_name,
                         value=json.dumps(payload).encode('utf-8'))
     time.sleep(5)
+    # Setup proper shutdown hook
+    atexit.register(shutdown_hook, kafka_producer)

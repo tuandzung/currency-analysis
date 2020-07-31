@@ -68,14 +68,12 @@ if __name__ == '__main__':
 
     for key, data in table.scan():
         payload = {
-            'symbol': data[b'family:symbol'].decode(),  # default decode utf-8
-            'price': data[b'family:trade_price'].decode(),
-            'volume': data[b'family:trade_vol'].decode(),
-            'ts': data[b'family:trade_time'].decode()
+            'open': data[b'p:open'],
+            'high': data[b'p:high'],
+            'low': data[b'p:low'],
+            'close': data[b'p:close'],
         }
 
         logger.debug('Read data from hbase: %s', payload)
-        kafka_producer.send(topic=topic_name,
-                            value=json.dumps(payload).encode('utf-8'))
 
         time.sleep(1)
