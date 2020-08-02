@@ -43,8 +43,8 @@ class CoinbaseWsClient(cbpro.WebsocketClient):
                 logger.debug('Retrieved %s info %s', symbol, payload)
 
                 # serialization json => str, default string format is ASCII
-                producer.send(topic=topic_name,
-                              value=json.dumps(payload).encode('utf-8'))
+#                 producer.send(topic=topic_name,
+#                               value=json.dumps(payload).encode('utf-8'))
                 logger.info('Sent price for %s to kafka', symbol)
             except Exception as e:
                 logger.error('Failed to fetch price: %s', e)
