@@ -12,7 +12,9 @@ spark = SparkSession \
         .builder \
         .appName('structuredStreamingKafka') \
         .config('spark.jars.packages', 'org.apache.spark:spark-sql-kafka-0-10_2.11:2.4.0,za.co.absa:abris_2.11:3.2.1,org.apache.avro:avro:1.9.1') \
-        .config('spark.jars.repositories', 'http://packages.confluent.io/maven') \
+        .config('schemaRegistryUrl', 'http://schema-registry:8081') \
+        .config('schemaRegistryReadTopic', 'coins_realtime_update') \
+        .config('schemaRegistryWriteTopic', 'coins_hbase_sink') \
         .getOrCreate()
 
 sc = spark.sparkContext
@@ -35,11 +37,10 @@ def from_avro(col):
         getattr(abris_avro.read.confluent.SchemaManager, "SchemaStorageNamingStrategies$"),
         "MODULE$"
     ).TOPIC_NAME()
-    print(naming_strategy)
 
     schema_registry_config_dict = {
-        "schema.registry.url": 'http://schema-registry:8081',
-        "schema.registry.topic": 'coin',
+        "schema.registry.url": spark.conf.get("schemaRegistryUrl"),
+        "schema.registry.topic": spark.conf.get("schemaRegistryReadTopic"),
         "{col}.schema.id".format(col=col): "latest",
         "{col}.schema.naming.strategy".format(col=col): naming_strategy
     }
@@ -67,8 +68,8 @@ def to_avro(col):
     ).TOPIC_NAME()
 
     schema_registry_config_dict = {
-        "schema.registry.url": 'http://schema-registry:8081',
-        "schema.registry.topic": 'coin',
+        "schema.registry.url": spark.conf.get("schemaRegistryUrl"),
+        "schema.registry.topic": spark.conf.get("schemaRegistryWriteTopic"),
         "{col}.schema.id".format(col=col): "latest", 
         "{col}.schema.naming.strategy".format(col=col): naming_strategy
     }
@@ -108,33 +109,30 @@ if __name__ == '__main__':
       .select(from_avro('value').alias('parsed')) \
       .select('parsed.*')
     
-    query = df.writeStream.format('console').option('truncate', 'false').start().awaitTermination()
+#     query = df.writeStream.format('console').option('truncate', 'false').start().awaitTermination()
     
 #     json_schema = '{"schema": {"type": "struct", "name": "coins.ohlc", "fields": [{"field": "exchange", "type": "string", "optional": false}, {"field": "symbol", "type": "string", "optional": false}, {"field": "time", "type": "string", "optional": false}, {"field": "open", "type": "float", "optional": false}, {"field": "high", "type": "float", "optional": false}, {"field": "low", "type": "float", "optional": false}, {"field": "close", "type": "float", "optional": false}]}, '
     
-#     query = df \
-#       .withWatermark('time', watermark) \
-#       .groupBy(F.window('time', window), 'exchange', 'product_id') \
-#       .agg(F.first('price').cast('float').alias('open'),
-#            F.max('price').cast('float').alias('high'),
-#            F.min('price').cast('float').alias('low'),
-#            F.last('price').cast('float').alias('close'),
-#            F.last('volume_24h').cast('float').alias('base_vol_24h')) \
-#       .withColumn('quote_vol_24h', F.col('base_vol_24h') * F.col('close')) \
-#       .withColumn('time', F.unix_timestamp('window.end').cast('string')) \
-#       .writeStream.format('console').option('truncate', 'false').start().awaitTermination()
-#       .select(F.to_json(F.struct(
-#         'exchange', 'symbol', 'time',
-#         'open', 'high', 'low', 'close')).alias('payload')) \
-#       .select(F.concat(
-#         F.lit(json_schema),
-#         F.lit('"payload": '),
-#         F.col('payload'),
-#         F.lit('}')).alias('value')) \
-#       .writeStream \
-#       .format('kafka') \
-#       .option('kafka.bootstrap.servers', kafka_broker) \
-#       .option('topic', 'sink-topic') \
-#       .option('checkpointLocation', "/tmp/checkpoint") \
-#       .start() \
-#       .awaitTermination()
+    query = df \
+      .withColumn('timestamp', F.col('time').cast('timestamp')) \
+      .withWatermark('timestamp', watermark) \
+      .groupBy(F.window('timestamp', window), 'exchange', 'symbol') \
+      .agg(F.first('price').alias('open'),
+           F.max('price').alias('high'),
+           F.min('price').alias('low'),
+           F.last('price').alias('close'),
+           F.last('base_vol_24h').alias('base_vol_24h')) \
+      .withColumn('time', F.unix_timestamp('window.end').cast('string')) \
+      .withColumn('volume', F.col('base_vol_24h') * F.col('close')) \
+      .withColumn('row_id', F.concat(
+        'symbol', F.lit('#'), 'exchange', F.lit('#'), 'time')) \
+      .withColumn('value', F.struct(
+        'row_id', 'open', 'high', 'low', 'close', 'volume')) \
+      .select(to_avro('value').alias('value')) \
+      .writeStream \
+      .format('kafka') \
+      .option('kafka.bootstrap.servers', kafka_broker) \
+      .option('topic', 'coins_hbase_sink') \
+      .option('checkpointLocation', "/tmp/checkpoint") \
+      .start() \
+      .awaitTermination()
